@@ -19,60 +19,70 @@ class APromise {
   }
 
   resolve = (value) => {
-    if (this.state === 'pending') {
-      this.state = 'fulfilled';
-      this.value = value;
-
-      // https://promisesaplus.com/#point-26
-      // https://promisesaplus.com/#point-34
-      setTimeout(() => {
-        this.fulfilledQue.forEach((resolveCb) => {
-          this.value = resolveCb(this.value);
+    setTimeout(() => {
+      if (this.state === 'pending') {
+        this.state = 'fulfilled';
+        this.value = value;
+        this.fulfilledQue.forEach((cb) => {
+          cb(this.value);
         });
-      });
-    }
+      }
+    });
   };
 
   reject = (reason) => {
-    if (this.state === 'pending') {
-      this.state = 'rejected';
-      this.reason = reason;
-
-      // https://promisesaplus.com/#point-26
-      // https://promisesaplus.com/#point-34
-      setTimeout(() => {
-        this.rejectedQue.forEach((rejectCb) => {
-          this.reason = rejectCb(this.reason);
+    setTimeout(() => {
+      if (this.state === 'pending') {
+        this.state = 'rejected';
+        this.reason = reason;
+        this.rejectedQue.forEach((cb) => {
+          cb(this.reason);
         });
-      });
-    }
+      }
+    });
   };
 
   then = (onFulfilled, onRejected) => {
-    // https://promisesaplus.com/#point-40
+    onFulfilled = typeof onFulfilled === 'function' ? onFulfilled : (value) => value;
+    onRejected =
+      typeof onRejected === 'function'
+        ? onRejected
+        : (reason) => {
+            throw reason;
+          };
     const newPromise = new APromise((resolve, reject) => {
-      // https://promisesaplus.com/#point-23
-      if (typeof onFulfilled === 'function') {
-        this.fulfilledQue.push((value) => {
+      if (this.state === 'fulfilled') {
+        setTimeout(() => {
           try {
-            // https://promisesaplus.com/#point-41
-            const x = onFulfilled(value);
+            const x = onFulfilled(this.value);
             this.resolvePromise(newPromise, x, resolve, reject);
           } catch (e) {
-            // https://promisesaplus.com/#point-42
             reject(e);
           }
         });
-      } else {
-        this.resolvePromise(
-          newPromise,
-          this,
-          (value) => value,
-          (reason) => reason
-        );
       }
 
-      if (typeof onRejected === 'function') {
+      if (this.state === 'rejected') {
+        setTimeout(() => {
+          try {
+            const x = onRejected(this.reason);
+            this.resolvePromise(newPromise, x, resolve, reject);
+          } catch (e) {
+            reject(e);
+          }
+        });
+      }
+
+      if (this.state === 'pending') {
+        this.fulfilledQue.push((value) => {
+          try {
+            const x = onFulfilled(value);
+            this.resolvePromise(newPromise, x, resolve, reject);
+          } catch (e) {
+            reject(e);
+          }
+        });
+
         this.rejectedQue.push((reason) => {
           try {
             const x = onRejected(reason);
@@ -100,7 +110,7 @@ class APromise {
       if (x.state === 'pending') {
         x.then(
           (value) => {
-            this.resolvePromise(promise, value);
+            this.resolvePromise(promise, value, resolve, reject);
           },
           (reason) => {
             reject(reason);
@@ -110,7 +120,7 @@ class APromise {
         // https://promisesaplus.com/#point-51
         x.then(resolve, reject);
       }
-    } else if (typeof x === 'function' || typeof x === 'object') {
+    } else if (x && (typeof x === 'function' || typeof x === 'object')) {
       // https://promisesaplus.com/#point-53
       let then;
       // https://promisesaplus.com/#point-59
@@ -126,7 +136,7 @@ class APromise {
               if (!hasBeenResolved) {
                 hasBeenResolved = true;
                 // https://promisesaplus.com/#point-57
-                this.resolvePromise(promise, y);
+                this.resolvePromise(promise, y, resolve, reject);
               }
             },
             (r) => {
